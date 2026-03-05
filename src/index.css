@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --ios-safe-area-top: env(safe-area-inset-top);
+    --ios-safe-area-bottom: env(safe-area-inset-bottom);
+  }
+
+  html {
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    touch-action: manipulation;
+  }
+
+  body {
+    @apply font-sans;
+    padding-top: var(--ios-safe-area-top);
+    padding-bottom: var(--ios-safe-area-bottom);
+  }
+
+  h1, h2, h3, h4 {
+    @apply font-display;
+  }
+}
+
+@layer components {
+  .ios-button {
+    @apply h-14 px-6 flex items-center justify-center rounded-ios font-semibold transition-all duration-200 active:scale-95 disabled:opacity-50 disabled:active:scale-100;
+  }
+
+  .ios-button-primary {
+    @apply ios-button bg-sage text-white shadow-ios hover:bg-sage-dark;
+  }
+
+  .ios-button-secondary {
+    @apply ios-button bg-rose text-white shadow-ios hover:bg-rose-dark;
+  }
+
+  .ios-button-ghost {
+    @apply ios-button bg-transparent text-sage hover:bg-sage/10;
+  }
+
+  .ios-card {
+    @apply bg-white p-5 rounded-ios-lg shadow-ios border border-cream-dark/50;
+  }
+
+  .ios-input {
+    @apply h-14 px-4 bg-cream-light border-none rounded-ios focus:ring-2 focus:ring-sage outline-none transition-all duration-200;
+  }
+
+  .ios-bottom-nav {
+    @apply fixed bottom-0 left-0 right-0 h-20 bg-white/80 backdrop-blur-xl border-t border-cream-dark flex items-center justify-around px-4 z-50;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* Animations */
+.slide-up {
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
