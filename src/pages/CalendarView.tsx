@@ -29,6 +29,7 @@ const DAYS_TO_SHOW = [1, 2, 3, 4, 5, 6] // Monday (1) to Saturday (6)
 
 export const CalendarView: React.FC = () => {
     const [viewDate, setViewDate] = useState(new Date())
+    const [selectedDay, setSelectedDay] = useState<Date>(new Date())
     const [isScheduling, setIsScheduling] = useState(false)
     const [isManaging, setIsManaging] = useState(false)
     const [selectedSlot, setSelectedSlot] = useState<Date | null>(null)
@@ -39,6 +40,15 @@ export const CalendarView: React.FC = () => {
 
     useEffect(() => {
         fetchAppointments()
+    }, [viewDate])
+
+    // Update selectedDay if it's no longer in the current week view
+    useEffect(() => {
+        const weekStart = startOfWeek(viewDate, { locale: ptBR })
+        const weekEnd = endOfWeek(viewDate, { locale: ptBR })
+        if (!isWithinInterval(selectedDay, { start: weekStart, end: weekEnd })) {
+            setSelectedDay(weekStart)
+        }
     }, [viewDate])
 
     const fetchAppointments = async () => {
@@ -106,11 +116,11 @@ export const CalendarView: React.FC = () => {
 
     return (
         <div className="space-y-6">
-            <header className="flex items-center justify-between">
+            <header className="flex flex-col space-y-4 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
                 <div>
                     <h2 className="text-2xl font-display font-bold text-dark">Agenda</h2>
                     <div className="flex items-center space-x-2 text-sage font-bold">
-                        <span>{format(viewDate, "MMMM 'de' yyyy", { locale: ptBR })}</span>
+                        <span className="capitalize">{format(viewDate, "MMMM 'de' yyyy", { locale: ptBR })}</span>
                     </div>
                 </div>
                 <div className="flex space-x-2">
@@ -121,7 +131,11 @@ export const CalendarView: React.FC = () => {
                         <ChevronLeft size={20} />
                     </button>
                     <button
-                        onClick={() => setViewDate(new Date())}
+                        onClick={() => {
+                            const today = new Date()
+                            setViewDate(today)
+                            setSelectedDay(today)
+                        }}
                         className="px-4 h-10 bg-white shadow-ios rounded-full flex items-center justify-center text-xs font-bold text-sage active:scale-95 transition-transform"
                     >
                         Hoje
@@ -135,6 +149,25 @@ export const CalendarView: React.FC = () => {
                 </div>
             </header>
 
+            {/* Day Selector (Mobile Only) */}
+            <div className="flex md:hidden overflow-x-auto pb-2 -mx-4 px-4 space-x-3 scrollbar-hide">
+                {days.map((day) => (
+                    <button
+                        key={day.toString()}
+                        onClick={() => setSelectedDay(day)}
+                        className={cn(
+                            "flex flex-col items-center min-w-[64px] py-3 rounded-2xl transition-all",
+                            isSameDay(day, selectedDay)
+                                ? "bg-sage text-white shadow-lg scale-105"
+                                : "bg-white text-dark/40 shadow-ios"
+                        )}
+                    >
+                        <span className="text-[10px] font-bold uppercase mb-1">{format(day, 'eee', { locale: ptBR })}</span>
+                        <span className="text-lg font-display font-bold">{format(day, 'd')}</span>
+                    </button>
+                ))}
+            </div>
+
             {/* Agenda Grid */}
             <div className="bg-white rounded-ios-lg shadow-ios overflow-hidden relative">
                 {loading && (
@@ -144,37 +177,52 @@ export const CalendarView: React.FC = () => {
                 )}
 
                 <div className="overflow-x-auto">
-                    <table className="w-full border-collapse table-fixed min-w-[600px]">
+                    <table className="w-full border-collapse table-fixed min-w-full md:min-w-[800px]">
                         <thead>
                             <tr className="bg-cream-light/50 border-b border-cream-dark/50">
-                                <th className="w-16 py-3"></th>
+                                <th className="w-16 py-4 md:py-3"></th>
+                                {/* Desktop Headers */}
                                 {days.map((day) => (
-                                    <th key={day.toString()} className="py-3 px-1 text-center">
-                                        <div className={cn(
-                                            "flex flex-col items-center py-1 rounded-xl",
-                                            isToday(day) ? "bg-sage/10 text-sage" : "text-dark/40"
-                                        )}>
+                                    <th key={`head-${day.toString()}`} className={cn(
+                                        "py-3 px-1 text-center hidden md:table-cell",
+                                        isToday(day) ? "bg-sage/10 text-sage" : "text-dark/40"
+                                    )}>
+                                        <div className="flex flex-col items-center py-1">
                                             <span className="text-[10px] font-bold uppercase">{format(day, 'eee', { locale: ptBR })}</span>
                                             <span className="text-lg font-display font-bold">{format(day, 'd')}</span>
                                         </div>
                                     </th>
                                 ))}
+                                {/* Mobile Header */}
+                                <th className="py-3 px-4 text-left md:hidden">
+                                    <div className="flex items-center space-x-2 text-sage">
+                                        <CalendarDays size={16} />
+                                        <span className="text-sm font-bold capitalize">
+                                            {format(selectedDay, "EEEE, d 'de' MMMM", { locale: ptBR })}
+                                        </span>
+                                    </div>
+                                </th>
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody className="divide-y divide-cream-dark/20">
                             {HOURS.map((hour) => (
-                                <tr key={hour} className="border-b border-cream-dark/20 last:border-0 h-16">
-                                    <td className="text-center">
-                                        <span className="text-xs font-bold text-dark/20">{hour}:00</span>
+                                <tr key={hour} className="group">
+                                    <td className="text-center py-6 md:py-4 align-top">
+                                        <span className="text-xs font-bold text-dark/30">{hour}:00</span>
                                     </td>
+
+                                    {/* Desktop Slots */}
                                     {days.map((day) => {
                                         const apt = getAppointmentForSlot(day, hour)
                                         const isSlotStart = apt && isSameDay(new Date(apt.start_time), day) && new Date(apt.start_time).getHours() === hour
 
                                         return (
                                             <td
-                                                key={`${day}-${hour}`}
-                                                className="relative p-1 border-r border-cream-dark/10 last:border-0 h-full"
+                                                key={`desktop-${day}-${hour}`}
+                                                className={cn(
+                                                    "relative p-1 border-r border-cream-dark/10 last:border-0 h-24 md:h-16 hidden md:table-cell transition-colors",
+                                                    !apt && "hover:bg-cream-light/50 cursor-pointer"
+                                                )}
                                                 onClick={() => {
                                                     if (apt) {
                                                         setSelectedAppointment(apt)
@@ -193,13 +241,51 @@ export const CalendarView: React.FC = () => {
                                                         </div>
                                                     )
                                                 ) : (
-                                                    <div className="h-full w-full rounded-xl hover:bg-cream-light/50 transition-colors flex items-center justify-center group">
-                                                        <Plus size={14} className="text-dark/5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                                    <div className="h-full w-full flex items-center justify-center opacity-0 group-hover:opacity-100">
+                                                        <Plus size={14} className="text-sage" />
                                                     </div>
                                                 )}
                                             </td>
                                         )
                                     })}
+
+                                    {/* Mobile Slot */}
+                                    <td
+                                        className="relative p-2 md:hidden h-24 transition-colors active:bg-cream-light/50"
+                                        onClick={() => {
+                                            const apt = getAppointmentForSlot(selectedDay, hour)
+                                            if (apt) {
+                                                setSelectedAppointment(apt)
+                                                setIsManaging(true)
+                                            } else {
+                                                setSelectedSlot(setMinutes(setHours(selectedDay, hour), 0))
+                                                setIsScheduling(true)
+                                            }
+                                        }}
+                                    >
+                                        {(() => {
+                                            const apt = getAppointmentForSlot(selectedDay, hour)
+                                            const isSlotStart = apt && isSameDay(new Date(apt.start_time), selectedDay) && new Date(apt.start_time).getHours() === hour
+
+                                            if (apt) {
+                                                return isSlotStart ? (
+                                                    <div className="absolute inset-2 bg-sage/10 border-l-4 border-l-sage rounded-2xl p-3 shadow-sm flex flex-col justify-center">
+                                                        <div className="flex items-center justify-between mb-1">
+                                                            <h4 className="font-bold text-sage-dark">{apt.client?.name}</h4>
+                                                            <span className="text-[10px] bg-sage/20 text-sage-dark px-2 py-0.5 rounded-full">Ocupado</span>
+                                                        </div>
+                                                        <p className="text-xs text-sage/70 font-medium">{apt.massage?.name}</p>
+                                                    </div>
+                                                ) : null
+                                            }
+
+                                            return (
+                                                <div className="h-full w-full border-2 border-dashed border-cream-dark/30 rounded-2xl flex items-center justify-center">
+                                                    <Plus size={20} className="text-dark/10" />
+                                                </div>
+                                            )
+                                        })()}
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>
