@@ -228,7 +228,7 @@ export const CalendarView: React.FC = () => {
                 title={selectedSlot ? `Agendamento para ${format(selectedSlot, "eeee, HH:mm", { locale: ptBR })}` : "Novo Agendamento"}
             >
                 <SchedulingFlow
-                    preSelectedDate={selectedSlot}
+                    preSelectedDate={selectedSlot ?? undefined}
                     onComplete={() => {
                         setIsScheduling(false)
                         setSelectedSlot(null)
