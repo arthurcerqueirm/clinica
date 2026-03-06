@@ -2,11 +2,17 @@ import React, { useState, useEffect } from 'react'
 import { TrendingUp, TrendingDown, DollarSign, ArrowUpRight, Loader2, CheckCircle, Clock } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { supabase } from '../utils/supabase'
+import { MarkAsPaidModal } from '../components/MarkAsPaidModal'
 
 export const FinancialDashboard: React.FC = () => {
     const [loading, setLoading] = useState(true)
     const [payments, setPayments] = useState<any[]>([])
+    const [pendingAppointments, setPendingAppointments] = useState<any[]>([])
     const [totals, setTotals] = useState({ received: 0, pending: 0 })
+    const [activeView, setActiveView] = useState<'history' | 'pending'>('history')
+
+    const [selectedAppointment, setSelectedAppointment] = useState<any | null>(null)
+    const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false)
 
     useEffect(() => {
         fetchFinancialData()
@@ -15,30 +21,49 @@ export const FinancialDashboard: React.FC = () => {
     const fetchFinancialData = async () => {
         setLoading(true)
         try {
-            const { data, error } = await supabase
+            // 1. Fetch History
+            const { data: paymentsData, error: paymentsError } = await supabase
                 .from('payments')
                 .select(`
-          *,
-          appointment:appointment_id (
-            client:client_id (name)
-          )
-        `)
+                  *,
+                  appointment:appointment_id (
+                    client:client_id (name),
+                    massage:massage_id (name)
+                  )
+                `)
                 .order('created_at', { ascending: false })
 
-            if (error) throw error
+            if (paymentsError) throw paymentsError
+            setPayments(paymentsData || [])
 
-            const paymentsList = data || []
-            setPayments(paymentsList)
+            // 2. Fetch Pending Appointments (Completed but no paid record)
+            const { data: appointmentsData, error: appointmentsError } = await supabase
+                .from('appointments')
+                .select(`
+                  *,
+                  client:client_id (name),
+                  massage:massage_id (name, price)
+                `)
+                .lt('start_time', new Date().toISOString())
+                .eq('status', 'confirmed')
+                .order('start_time', { ascending: false })
 
-            const received = paymentsList
+            if (appointmentsError) throw appointmentsError
+
+            // Filter out appointments that already have a paid payment record
+            const paidAppointmentIds = new Set((paymentsData || []).map(p => p.appointment_id))
+            const pending = (appointmentsData || []).filter(apt => !paidAppointmentIds.has(apt.id))
+
+            setPendingAppointments(pending)
+
+            const received = (paymentsData || [])
                 .filter(p => p.status === 'paid')
                 .reduce((acc, curr) => acc + Number(curr.amount), 0)
 
-            const pending = paymentsList
-                .filter(p => p.status === 'pending')
-                .reduce((acc, curr) => acc + Number(curr.amount), 0)
+            const pendingTotal = pending
+                .reduce((acc, curr) => acc + Number(curr.massage?.price || 0), 0)
 
-            setTotals({ received, pending })
+            setTotals({ received, pending: pendingTotal })
         } catch (err) {
             console.error('Erro ao buscar dados financeiros:', err)
         } finally {
@@ -48,7 +73,7 @@ export const FinancialDashboard: React.FC = () => {
 
     const stats = [
         { label: 'Recebido (Mês)', value: `R$ ${totals.received}`, icon: TrendingUp, color: 'text-sage' },
-        { label: 'Pendente', value: `R$ ${totals.pending}`, icon: TrendingDown, color: 'text-rose' },
+        { label: 'A Receber', value: `R$ ${totals.pending}`, icon: Clock, color: 'text-rose' },
         { label: 'Expectativa', value: `R$ ${totals.received + totals.pending}`, icon: DollarSign, color: 'text-dark' },
     ]
 
@@ -62,70 +87,126 @@ export const FinancialDashboard: React.FC = () => {
             {/* Stats Grid */}
             <div className="grid grid-cols-1 gap-4">
                 {stats.map((stat, i) => (
-                    <div key={i} className="ios-card flex items-center justify-between">
+                    <div key={i} className="ios-card flex items-center justify-between group hover:shadow-ios-hover transition-all">
                         <div className="flex items-center space-x-4">
                             <div className={cn("w-12 h-12 rounded-2xl flex items-center justify-center bg-cream-light", stat.color)}>
                                 <stat.icon size={24} />
                             </div>
                             <div>
-                                <span className="text-[10px] uppercase font-bold text-dark/30">{stat.label}</span>
+                                <span className="text-[10px] uppercase font-bold text-dark/30 tracking-wider">{stat.label}</span>
                                 <h3 className="text-2xl font-display font-bold text-dark">{stat.value}</h3>
                             </div>
                         </div>
-                        <ArrowUpRight className="text-dark/10" />
+                        <ArrowUpRight className="text-dark/5 group-hover:text-dark/20 transition-colors" />
                     </div>
                 ))}
             </div>
 
-            {/* Chart Placeholder */}
-            <div className="ios-card">
-                <h3 className="font-display font-bold text-lg mb-4">Receita Semanal</h3>
-                <div className="h-40 w-full flex items-end justify-between px-2">
-                    {[40, 70, 45, 90, 65, 80, 50].map((h, i) => (
-                        <div key={i} className="flex flex-col items-center space-y-2 group">
-                            <div
-                                className="w-8 bg-sage/20 rounded-t-lg group-hover:bg-sage transition-all duration-300 relative"
-                                style={{ height: `${h}%` }}
-                            >
-                                <div className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-bold text-sage opacity-0 group-hover:opacity-100">
-                                    R${h * 10}
-                                </div>
-                            </div>
-                            <span className="text-[10px] font-bold text-dark/20">D{i + 1}</span>
-                        </div>
-                    ))}
-                </div>
+            {/* View Toggle */}
+            <div className="bg-cream-dark/30 p-1 rounded-2xl flex">
+                <button
+                    onClick={() => setActiveView('history')}
+                    className={cn(
+                        "flex-1 py-3 text-sm font-bold rounded-xl transition-all",
+                        activeView === 'history' ? "bg-white text-sage shadow-ios" : "text-dark/40 hover:text-dark/60"
+                    )}
+                >
+                    Histórico
+                </button>
+                <button
+                    onClick={() => setActiveView('pending')}
+                    className={cn(
+                        "flex-1 py-3 text-sm font-bold rounded-xl transition-all",
+                        activeView === 'pending' ? "bg-rose-light/50 text-rose-dark shadow-ios" : "text-dark/40 hover:text-dark/60"
+                    )}
+                >
+                    A Receber ({pendingAppointments.length})
+                </button>
             </div>
 
-            {/* Recent Activity */}
+            {/* List Section */}
             <div className="space-y-4 pb-24">
-                <h3 className="font-display font-bold text-lg">Últimos Pagamentos</h3>
-                {loading ? (
-                    <div className="py-10 flex justify-center">
-                        <Loader2 className="animate-spin text-sage" size={24} />
+                <div className="flex items-center justify-between">
+                    <h3 className="font-display font-bold text-lg">
+                        {activeView === 'history' ? 'Últimos Pagamentos' : 'Clientes a Receber'}
+                    </h3>
+                    {loading && <Loader2 className="animate-spin text-sage" size={20} />}
+                </div>
+
+                {loading && payments.length === 0 ? (
+                    <div className="py-20 flex flex-col items-center justify-center text-dark/20 space-y-4">
+                        <Loader2 className="animate-spin" size={32} />
+                        <p className="font-medium">Carregando dados...</p>
                     </div>
-                ) : payments.length > 0 ? payments.map((payment) => (
-                    <div key={payment.id} className="ios-card flex items-center justify-between active:scale-[0.98] transition-all">
-                        <div className="flex items-center space-x-4">
-                            <div className={cn(
-                                "w-10 h-10 rounded-full flex items-center justify-center",
-                                payment.status === 'paid' ? "bg-sage/10 text-sage" : "bg-rose/10 text-rose"
-                            )}>
-                                {payment.status === 'paid' ? <CheckCircle size={20} /> : <Clock size={20} />}
+                ) : activeView === 'history' ? (
+                    payments.length > 0 ? payments.map((payment) => (
+                        <div key={payment.id} className="ios-card flex items-center justify-between group">
+                            <div className="flex items-center space-x-4">
+                                <div className={cn(
+                                    "w-10 h-10 rounded-full flex items-center justify-center transition-colors",
+                                    payment.status === 'paid' ? "bg-sage/10 text-sage" : "bg-rose/10 text-rose"
+                                )}>
+                                    {payment.status === 'paid' ? <CheckCircle size={20} /> : <Clock size={20} />}
+                                </div>
+                                <div>
+                                    <h4 className="font-bold text-dark">{payment.appointment?.client?.name || 'Cliente'}</h4>
+                                    <p className="text-[10px] text-dark/30 font-bold uppercase tracking-tight">
+                                        {payment.payment_date ? new Date(payment.payment_date).toLocaleDateString('pt-BR') : 'Pendente'} • {payment.method || 'N/A'} • {payment.appointment?.massage?.name}
+                                    </p>
+                                </div>
                             </div>
-                            <div>
-                                <h4 className="font-bold text-dark">{payment.appointment?.client?.name || 'Cliente'}</h4>
-                                <p className="text-[10px] text-dark/30 font-bold uppercase">
-                                    {payment.payment_date ? new Date(payment.payment_date).toLocaleDateString() : 'Pendente'} • {payment.method || 'N/A'}
-                                </p>
-                            </div>
+                            <span className="font-display font-bold text-dark text-lg">R$ {payment.amount}</span>
                         </div>
-                        <span className="font-display font-bold text-dark">R$ {payment.amount}</span>
-                    </div>
-                )) : (
-                    <div className="text-center py-10 text-dark/20 italic font-medium">Nenhum pagamento registrado</div>
+                    )) : (
+                        <div className="text-center py-16 bg-white/50 rounded-[32px] border-2 border-dashed border-cream-dark text-dark/20 italic font-medium">
+                            Nenhum pagamento registrado
+                        </div>
+                    )
+                ) : (
+                    pendingAppointments.length > 0 ? pendingAppointments.map((apt) => (
+                        <div key={apt.id} className="ios-card flex items-center justify-between animate-in fade-in slide-in-from-right-4">
+                            <div className="flex items-center space-x-4">
+                                <div className="w-12 h-12 bg-rose/10 text-rose-dark rounded-2xl flex items-center justify-center">
+                                    <Clock size={24} />
+                                </div>
+                                <div>
+                                    <h4 className="font-bold text-dark">{apt.client?.name}</h4>
+                                    <p className="text-[10px] text-dark/30 font-bold uppercase tracking-tight">
+                                        Realizado em {new Date(apt.start_time).toLocaleDateString('pt-BR')} • {apt.massage?.name}
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => {
+                                    setSelectedAppointment(apt)
+                                    setIsPaymentModalOpen(true)
+                                }}
+                                className="bg-sage text-white px-4 py-2 rounded-xl text-xs font-bold shadow-ios active:scale-95 transition-all"
+                            >
+                                Pagar
+                            </button>
+                        </div>
+                    )) : (
+                        <div className="text-center py-16 bg-white/50 rounded-[32px] border-2 border-dashed border-cream-dark text-dark/20 italic font-medium">
+                            Não há clientes com pagamentos pendentes
+                        </div>
+                    )
                 )}
             </div>
+
+            {selectedAppointment && (
+                <MarkAsPaidModal
+                    isOpen={isPaymentModalOpen}
+                    onClose={() => {
+                        setIsPaymentModalOpen(false)
+                        setSelectedAppointment(null)
+                    }}
+                    onSuccess={fetchFinancialData}
+                    appointmentId={selectedAppointment.id}
+                    amount={Number(selectedAppointment.massage?.price || 0)}
+                    clientName={selectedAppointment.client?.name}
+                />
+            )}
         </div>
     )
 }

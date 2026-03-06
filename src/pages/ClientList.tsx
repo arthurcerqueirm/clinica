@@ -11,7 +11,7 @@ import { ClientDetails } from '../components/ClientDetails'
 export const ClientList: React.FC = () => {
     const [search, setSearch] = useState('')
     const [filter, setFilter] = useState<'all' | 'active' | 'debtor'>('all')
-    const [clients, setClients] = useState<Profile[]>([])
+    const [clients, setClients] = useState<(Profile & { pending_amount: number })[]>([])
     const [loading, setLoading] = useState(true)
     const [isAddingClient, setIsAddingClient] = useState(false)
     const [selectedClient, setSelectedClient] = useState<Profile | null>(null)
@@ -24,13 +24,55 @@ export const ClientList: React.FC = () => {
     const fetchClients = async () => {
         setLoading(true)
         try {
-            const { data, error } = await supabase
+            // 1. Fetch Clients
+            const { data: clientsData, error: clientsError } = await supabase
                 .from('clients')
                 .select('*')
                 .order('name')
 
-            if (error) throw error
-            setClients(data || [])
+            if (clientsError) throw clientsError
+
+            // 2. Fetch all past confirmed appointments
+            const { data: appointmentsData, error: appointmentsError } = await supabase
+                .from('appointments')
+                .select(`
+                    id,
+                    client_id,
+                    status,
+                    start_time,
+                    massage:massage_id (price)
+                `)
+                .eq('status', 'confirmed')
+                .lt('start_time', new Date().toISOString())
+
+            if (appointmentsError) throw appointmentsError
+
+            // 3. Fetch all payments
+            const { data: paymentsData, error: paymentsError } = await supabase
+                .from('payments')
+                .select('appointment_id, status')
+                .eq('status', 'paid')
+
+            if (paymentsError) throw paymentsError
+
+            const paidAptIds = new Set(paymentsData.map(p => p.appointment_id))
+
+            const clientDebts: Record<string, number> = {}
+            appointmentsData.forEach(apt => {
+                if (!paidAptIds.has(apt.id)) {
+                    const price = Array.isArray(apt.massage)
+                        ? Number(apt.massage[0]?.price || 0)
+                        : Number((apt.massage as any)?.price || 0)
+                    clientDebts[apt.client_id] = (clientDebts[apt.client_id] || 0) + price
+                }
+            })
+
+            const clientsWithDebt = (clientsData || []).map(client => ({
+                ...client,
+                pending_amount: clientDebts[client.id] || 0
+            }))
+
+            setClients(clientsWithDebt)
         } catch (err) {
             console.error('Erro ao buscar clientes:', err)
         } finally {
@@ -45,9 +87,9 @@ export const ClientList: React.FC = () => {
 
     const filteredClients = clients.filter(c => {
         const matchesSearch = c.name.toLowerCase().includes(search.toLowerCase())
-        // For now, filtering is simple. In a real app, 'debtor' and 'active' status would come from business logic or DB fields.
-        const matchesFilter = filter === 'all'
-        return matchesSearch && matchesFilter
+        if (filter === 'debtor') return matchesSearch && c.pending_amount > 0
+        if (filter === 'active') return matchesSearch // For now assume all are active
+        return matchesSearch
     })
 
     return (
@@ -120,7 +162,15 @@ export const ClientList: React.FC = () => {
                             </div>
                             <div className="flex-1">
                                 <div className="flex items-center justify-between">
-                                    <h4 className="font-bold text-dark text-lg leading-none mb-1">{client.name}</h4>
+                                    <div className="flex items-center space-x-2">
+                                        <h4 className="font-bold text-dark text-lg leading-none mb-1">{client.name}</h4>
+                                        {client.pending_amount > 0 && (
+                                            <div className="flex items-center bg-rose/10 text-rose-dark px-2 py-0.5 rounded-full text-[10px] font-bold animate-pulse">
+                                                <div className="w-1.5 h-1.5 bg-rose rounded-full mr-1" />
+                                                PENDENTE
+                                            </div>
+                                        )}
+                                    </div>
                                     <button className="p-2 -mr-2 text-dark/20 group-hover:text-dark/40 transition-colors">
                                         <MoreVertical size={18} />
                                     </button>
@@ -134,8 +184,13 @@ export const ClientList: React.FC = () => {
 
                         <div className="mt-4 pt-4 border-t border-cream-dark/50 flex items-center justify-between">
                             <div className="flex flex-col">
-                                <span className="text-[10px] uppercase font-bold text-dark/20">Status</span>
-                                <span className="text-xs font-bold text-dark/60">Ativa</span>
+                                <span className="text-[10px] uppercase font-bold text-dark/20">Status financeiro</span>
+                                <span className={cn(
+                                    "text-xs font-bold",
+                                    client.pending_amount > 0 ? "text-rose-dark" : "text-sage"
+                                )}>
+                                    {client.pending_amount > 0 ? `Deve R$ ${client.pending_amount}` : 'Em dia'}
+                                </span>
                             </div>
                             <div className="flex space-x-2">
                                 <Button variant="ghost" className="h-9 px-4 text-xs bg-sage/5 hover:bg-sage/10">

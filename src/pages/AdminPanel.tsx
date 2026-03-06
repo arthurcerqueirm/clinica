@@ -1,9 +1,13 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { Info, Bell, Shield, LogOut, ChevronRight, Flower2 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { MassageManager } from './MassageManager'
+
+type AdminView = 'main' | 'massages'
 
 export const AdminPanel: React.FC = () => {
     const { signOut, user } = useAuth()
+    const [currentView, setCurrentView] = useState<AdminView>('main')
 
     const handleLogout = async () => {
         if (confirm('Deseja realmente sair?')) {
@@ -15,7 +19,7 @@ export const AdminPanel: React.FC = () => {
         {
             title: 'Configurações da Clínica',
             items: [
-                { label: 'Gestão de Massagens', icon: Flower2, color: 'text-sage', onClick: () => { } },
+                { label: 'Gestão de Massagens', icon: Flower2, color: 'text-sage', onClick: () => setCurrentView('massages') },
                 { label: 'Horário de Funcionamento', icon: Shield, color: 'text-dark/60', onClick: () => { } },
                 { label: 'Notificações Automáticas', icon: Bell, color: 'text-rose', onClick: () => { } },
             ]
@@ -28,6 +32,10 @@ export const AdminPanel: React.FC = () => {
             ]
         }
     ]
+
+    if (currentView === 'massages') {
+        return <MassageManager onBack={() => setCurrentView('main')} />
+    }
 
     return (
         <div className="space-y-6">
