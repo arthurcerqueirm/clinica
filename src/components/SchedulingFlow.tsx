@@ -5,7 +5,8 @@ import { cn } from '../utils/cn'
 import { supabase } from '../utils/supabase'
 import { useAuth } from '../context/AuthContext'
 import { createGoogleCalendarEvent, CalendarEvent } from '../utils/googleCalendar'
-import { Massage, Profile } from '../types/database'
+import { Massage, Profile, Package } from '../types/database'
+import { Package as PackageIcon } from 'lucide-react'
 import { format, addMinutes } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { BottomSheet } from './BottomSheet'
@@ -29,6 +30,8 @@ export const SchedulingFlow: React.FC<SchedulingFlowProps> = ({ onComplete, preS
 
     const [selectedClient, setSelectedClient] = useState<Profile | null>(null)
     const [selectedMassage, setSelectedMassage] = useState<Massage | null>(null)
+    const [activePackages, setActivePackages] = useState<Package[]>([])
+    const [selectedPackage, setSelectedPackage] = useState<Package | null>(null)
     const [search, setSearch] = useState('')
     const [isAddingClient, setIsAddingClient] = useState(false)
 
@@ -53,11 +56,33 @@ export const SchedulingFlow: React.FC<SchedulingFlowProps> = ({ onComplete, preS
         }
     }
 
+    const handleClientSelect = async (client: Profile) => {
+        setSelectedClient(client)
+        setLoading(true)
+        try {
+            const { data } = await supabase
+                .from('packages')
+                .select(`
+                    *,
+                    package_allowed_massages(massage_id, quantity_allowed, quantity_used)
+                `)
+                .eq('client_id', client.id)
+                .eq('status', 'active')
+                .gt('remaining_sessions', 0)
+
+            setActivePackages(data || [])
+        } catch (err) {
+            console.error('Erro ao buscar pacotes:', err)
+        } finally {
+            setLoading(false)
+            setStep(1)
+        }
+    }
+
     const handleAddClientSuccess = (newClient: Profile) => {
         setClients([newClient, ...clients])
-        setSelectedClient(newClient)
+        handleClientSelect(newClient)
         setIsAddingClient(false)
-        setStep(1)
     }
 
     const handleConfirm = async () => {
@@ -78,6 +103,7 @@ export const SchedulingFlow: React.FC<SchedulingFlowProps> = ({ onComplete, preS
                 .insert({
                     client_id: selectedClient.id,
                     massage_id: selectedMassage.id,
+                    package_id: selectedPackage?.id || null,
                     start_time: startTime.toISOString(),
                     end_time: endTime.toISOString(),
                     status: 'confirmed'
@@ -86,6 +112,36 @@ export const SchedulingFlow: React.FC<SchedulingFlowProps> = ({ onComplete, preS
                 .single()
 
             if (dbError) throw dbError
+
+            // 1.1 Update package remaining sessions if used
+            if (selectedPackage) {
+                // Find the specific item in the package
+                const pkgItem = (selectedPackage as any).package_allowed_massages?.find((am: any) => am.massage_id === selectedMassage.id)
+
+                if (pkgItem) {
+                    // Update item usage
+                    const { error: itemUpdateError } = await supabase
+                        .from('package_allowed_massages')
+                        .update({
+                            quantity_used: pkgItem.quantity_used + 1
+                        })
+                        .eq('package_id', selectedPackage.id)
+                        .eq('massage_id', selectedMassage.id)
+
+                    if (itemUpdateError) throw itemUpdateError
+                }
+
+                // Update overall package usage
+                const { error: pkgUpdateError } = await supabase
+                    .from('packages')
+                    .update({
+                        remaining_sessions: selectedPackage.remaining_sessions - 1,
+                        status: selectedPackage.remaining_sessions - 1 === 0 ? 'completed' : 'active'
+                    })
+                    .eq('id', selectedPackage.id)
+
+                if (pkgUpdateError) throw pkgUpdateError
+            }
 
             // 2. Sync with Google Calendar
             try {
@@ -184,7 +240,7 @@ export const SchedulingFlow: React.FC<SchedulingFlowProps> = ({ onComplete, preS
                                     {filteredClients.map(client => (
                                         <button
                                             key={client.id}
-                                            onClick={() => { setSelectedClient(client); setStep(1); }}
+                                            onClick={() => handleClientSelect(client)}
                                             className={cn(
                                                 "w-full p-4 flex items-center justify-between rounded-2xl transition-all",
                                                 selectedClient?.id === client.id ? "bg-sage/10 border-sage" : "bg-cream-light hover:bg-cream-dark/30"
@@ -214,22 +270,48 @@ export const SchedulingFlow: React.FC<SchedulingFlowProps> = ({ onComplete, preS
 
                         {step === 1 && (
                             <div className="grid grid-cols-1 gap-4 fade-in">
-                                {massages.map(m => (
-                                    <button
-                                        key={m.id}
-                                        onClick={() => { setSelectedMassage(m); setStep(2); }}
-                                        className={cn(
-                                            "p-5 rounded-ios-lg text-left transition-all border-2",
-                                            selectedMassage?.id === m.id ? "bg-sage/10 border-sage" : "bg-cream-light border-transparent"
-                                        )}
-                                    >
-                                        <div className="flex justify-between items-start mb-2">
-                                            <h4 className="text-lg font-bold text-dark">{m.name}</h4>
-                                            <span className="font-display font-bold text-sage">R$ {m.price}</span>
-                                        </div>
-                                        <p className="text-sm text-dark/40 font-medium">Duração: {m.duration_minutes} min</p>
-                                    </button>
-                                ))}
+                                {massages.map(m => {
+                                    const pkg = activePackages.find(p =>
+                                        (p as any).package_allowed_massages?.some((am: any) =>
+                                            am.massage_id === m.id && am.quantity_used < am.quantity_allowed
+                                        )
+                                    )
+                                    const pkgItem = pkg
+                                        ? (pkg as any).package_allowed_massages.find((am: any) => am.massage_id === m.id)
+                                        : null
+
+                                    return (
+                                        <button
+                                            key={m.id}
+                                            onClick={() => {
+                                                setSelectedMassage(m)
+                                                setSelectedPackage(pkg || null)
+                                                setStep(2)
+                                            }}
+                                            className={cn(
+                                                "p-5 rounded-ios-lg text-left transition-all border-2 relative overflow-hidden",
+                                                selectedMassage?.id === m.id ? "bg-sage/10 border-sage" : "bg-cream-light border-transparent"
+                                            )}
+                                        >
+                                            {pkgItem && (
+                                                <div className="absolute top-0 right-0 bg-sage text-white px-3 py-1 rounded-bl-xl text-[10px] font-bold flex items-center">
+                                                    <PackageIcon size={12} className="mr-1" /> PACOTE: {(pkgItem.quantity_allowed || 0) - (pkgItem.quantity_used || 0)} restantes
+                                                </div>
+                                            )}
+                                            <div className="flex justify-between items-start mb-2">
+                                                <h4 className="text-lg font-bold text-dark">{m.name}</h4>
+                                                <span className={cn(
+                                                    "font-display font-bold",
+                                                    pkg ? "text-sage line-through opacity-40 text-sm" : "text-sage"
+                                                )}>R$ {m.price}</span>
+                                            </div>
+                                            <div className="flex justify-between items-end">
+                                                <p className="text-sm text-dark/40 font-medium">Duração: {m.duration_minutes} min</p>
+                                                {pkg && <span className="text-sage font-display font-bold">Usar Pacote</span>}
+                                            </div>
+                                        </button>
+                                    )
+                                })}
                             </div>
                         )}
 
@@ -252,7 +334,16 @@ export const SchedulingFlow: React.FC<SchedulingFlowProps> = ({ onComplete, preS
                                     </div>
                                     <div className="pt-4 border-t border-cream-dark flex justify-between items-center">
                                         <span className="font-display font-bold text-xl">Total</span>
-                                        <span className="text-2xl font-display font-bold text-sage">R$ {selectedMassage?.price}</span>
+                                        <div className="text-right">
+                                            {selectedPackage ? (
+                                                <>
+                                                    <span className="text-2xl font-display font-bold text-sage">Pacote Ativo</span>
+                                                    <p className="text-[10px] uppercase font-bold text-dark/30">1 sessão será descontada</p>
+                                                </>
+                                            ) : (
+                                                <span className="text-2xl font-display font-bold text-sage">R$ {selectedMassage?.price}</span>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                                 <Button

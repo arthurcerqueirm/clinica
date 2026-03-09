@@ -29,6 +29,10 @@ export const FinancialDashboard: React.FC = () => {
                   appointment:appointment_id (
                     client:client_id (name),
                     massage:massage_id (name)
+                  ),
+                  package:package_id (
+                    client:client_id (name),
+                    total_sessions
                   )
                 `)
                 .order('created_at', { ascending: false })
@@ -149,9 +153,11 @@ export const FinancialDashboard: React.FC = () => {
                                     {payment.status === 'paid' ? <CheckCircle size={20} /> : <Clock size={20} />}
                                 </div>
                                 <div>
-                                    <h4 className="font-bold text-dark">{payment.appointment?.client?.name || 'Cliente'}</h4>
+                                    <h4 className="font-bold text-dark">
+                                        {payment.appointment?.client?.name || payment.package?.client?.name || 'Cliente'}
+                                    </h4>
                                     <p className="text-[10px] text-dark/30 font-bold uppercase tracking-tight">
-                                        {payment.payment_date ? new Date(payment.payment_date).toLocaleDateString('pt-BR') : 'Pendente'} • {payment.method || 'N/A'} • {payment.appointment?.massage?.name}
+                                        {payment.payment_date ? new Date(payment.payment_date).toLocaleDateString('pt-BR') : 'Pendente'} • {payment.method || 'N/A'} • {payment.package ? `PACOTE (${payment.package.total_sessions} massagens)` : payment.appointment?.massage?.name}
                                     </p>
                                 </div>
                             </div>

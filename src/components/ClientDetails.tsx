@@ -5,17 +5,24 @@ import { ptBR } from 'date-fns/locale'
 import { cn } from '../utils/cn'
 import { supabase } from '../utils/supabase'
 import { Button } from './Button'
-import { Profile } from '../types/database'
+import { Profile, Package } from '../types/database'
+import { MarkAsPaidModal } from './MarkAsPaidModal'
+import { CreatePackageModal } from './CreatePackageModal'
+import { Package as PackageIcon, Plus } from 'lucide-react'
 
 interface ClientDetailsProps {
     client: Profile
     onClose: () => void
+    onDeleteSuccess?: () => void
 }
 
-export const ClientDetails: React.FC<ClientDetailsProps> = ({ client, onClose }) => {
+export const ClientDetails: React.FC<ClientDetailsProps> = ({ client, onClose, onDeleteSuccess }) => {
     const [appointments, setAppointments] = useState<any[]>([])
+    const [packages, setPackages] = useState<Package[]>([])
     const [paidAptIds, setPaidAptIds] = useState<Set<string>>(new Set())
     const [loading, setLoading] = useState(true)
+    const [selectedAptForPayment, setSelectedAptForPayment] = useState<any | null>(null)
+    const [isCreatePackageOpen, setIsCreatePackageOpen] = useState(false)
 
     useEffect(() => {
         fetchHistory()
@@ -37,7 +44,25 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({ client, onClose })
             if (aptsError) throw aptsError
             setAppointments(apts || [])
 
-            // 2. Fetch payments for these appointments
+            // 2. Fetch packages
+            const { data: pkgs, error: pkgsError } = await supabase
+                .from('packages')
+                .select(`
+                    *,
+                    package_allowed_massages(
+                        massage:massage_id (name),
+                        quantity_allowed,
+                        quantity_used
+                    )
+                `)
+                .eq('client_id', client.id)
+                .eq('status', 'active')
+                .order('created_at', { ascending: false })
+
+            if (pkgsError) throw pkgsError
+            setPackages(pkgs || [])
+
+            // 3. Fetch payments for these appointments
             if (apts && apts.length > 0) {
                 const { data: payments, error: paymentsError } = await supabase
                     .from('payments')
@@ -67,6 +92,30 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({ client, onClose })
         const phone = client.phone?.replace(/\D/g, '')
         if (phone) {
             window.open(`https://wa.me/55${phone}`, '_blank')
+        }
+    }
+
+    const handleDelete = async () => {
+        if (!window.confirm(`Tem certeza que deseja excluir a cliente ${client.name}? Todos os agendamentos e pacotes serão removidios.`)) {
+            return
+        }
+
+        setLoading(true)
+        try {
+            const { error } = await supabase
+                .from('clients')
+                .delete()
+                .eq('id', client.id)
+
+            if (error) throw error
+
+            onDeleteSuccess?.()
+            onClose()
+        } catch (err) {
+            console.error('Erro ao excluir cliente:', err)
+            alert('Erro ao excluir cliente. Tente novamente.')
+        } finally {
+            setLoading(false)
         }
     }
 
@@ -138,7 +187,75 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({ client, onClose })
                 </div>
             </div>
 
-            {/* History Sections */}
+            {/* Packages Section */}
+            <div className="space-y-4">
+                <div className="flex items-center justify-between px-1">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-dark/30 flex items-center">
+                        <PackageIcon size={14} className="mr-2" /> Pacotes Ativos
+                    </h4>
+                    <button
+                        onClick={() => setIsCreatePackageOpen(true)}
+                        className="text-[10px] font-bold text-sage uppercase flex items-center bg-sage/10 px-2 py-1 rounded-lg"
+                    >
+                        <Plus size={12} className="mr-1" /> Novo Pacote
+                    </button>
+                </div>
+
+                {packages.length > 0 ? (
+                    <div className="space-y-2">
+                        {packages.map(pkg => (
+                            <div key={pkg.id} className="ios-card bg-cream-light/50 border-sage/20 !p-4">
+                                <div className="flex justify-between items-start mb-3">
+                                    <div>
+                                        <p className="font-bold text-dark leading-tight">
+                                            {(pkg as any).package_allowed_massages?.map((am: any) => am.massage?.name).join(', ')}
+                                        </p>
+                                        <p className="text-[10px] font-medium text-dark/40 uppercase mt-1">Pacote de {pkg.total_sessions} sessões</p>
+                                    </div>
+                                    <div className="bg-sage text-white px-2 py-1 rounded-lg text-[10px] font-bold shrink-0">
+                                        ATIVO
+                                    </div>
+                                </div>
+                                <div className="space-y-3">
+                                    <div className="flex justify-between text-[10px] font-bold uppercase text-dark/30 mb-1">
+                                        <span>Detalhamento do Pacote</span>
+                                        <span className="text-sage">{pkg.remaining_sessions} / {pkg.total_sessions} total</span>
+                                    </div>
+                                    <div className="space-y-2">
+                                        {(pkg as any).package_allowed_massages?.map((am: any) => (
+                                            <div key={am.massage?.name} className="flex items-center justify-between text-[11px] font-medium text-dark/60 bg-white/50 p-2 rounded-xl">
+                                                <span>{am.massage?.name}</span>
+                                                <div className="flex items-center space-x-2">
+                                                    <div className="w-16 h-1.5 bg-cream-dark rounded-full overflow-hidden">
+                                                        <div
+                                                            className="h-full bg-sage"
+                                                            style={{ width: `${((am.quantity_used || 0) / (am.quantity_allowed || 1)) * 100}%` }}
+                                                        />
+                                                    </div>
+                                                    <span className="font-bold">{(am.quantity_allowed || 0) - (am.quantity_used || 0)} restantes</span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="h-2 bg-cream-dark rounded-full overflow-hidden mt-4">
+                                        <div
+                                            className="h-full bg-sage transition-all duration-500"
+                                            style={{ width: `${(pkg.remaining_sessions / pkg.total_sessions) * 100}%` }}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <div
+                        onClick={() => setIsCreatePackageOpen(true)}
+                        className="p-6 border-2 border-dashed border-cream-dark rounded-ios-lg text-center opacity-40 hover:opacity-100 transition-all cursor-pointer bg-cream-light/30"
+                    >
+                        <p className="text-xs font-medium italic">Nenhum pacote ativo. Clique para criar.</p>
+                    </div>
+                )}
+            </div>
             {loading ? (
                 <div className="py-20 flex flex-col items-center justify-center space-y-4 opacity-40">
                     <Loader2 className="animate-spin text-sage" size={32} />
@@ -205,7 +322,12 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({ client, onClose })
                                         {paidAptIds.has(apt.id) ? (
                                             <span className="text-[10px] font-bold text-sage">Pago</span>
                                         ) : (
-                                            <span className="text-[10px] font-bold text-rose animate-pulse">Pendente</span>
+                                            <button
+                                                onClick={() => setSelectedAptForPayment(apt)}
+                                                className="bg-rose text-white px-3 py-1.5 rounded-lg text-[10px] font-bold shadow-ios active:scale-95 transition-all"
+                                            >
+                                                Pagar
+                                            </button>
                                         )}
                                     </div>
                                 ))}
@@ -218,6 +340,36 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({ client, onClose })
                     </div>
                 </div>
             )}
+
+            {selectedAptForPayment && (
+                <MarkAsPaidModal
+                    isOpen={!!selectedAptForPayment}
+                    onClose={() => setSelectedAptForPayment(null)}
+                    onSuccess={fetchHistory}
+                    appointmentId={selectedAptForPayment.id}
+                    amount={Number(selectedAptForPayment.massage?.price || 0)}
+                    clientName={client.name}
+                />
+            )}
+            {isCreatePackageOpen && (
+                <CreatePackageModal
+                    isOpen={isCreatePackageOpen}
+                    onClose={() => setIsCreatePackageOpen(false)}
+                    onSuccess={fetchHistory}
+                    client={client}
+                />
+            )}
+
+            <div className="pt-6 border-t border-cream-dark/50">
+                <Button
+                    variant="ghost"
+                    className="w-full text-rose hover:bg-rose/5"
+                    onClick={handleDelete}
+                    disabled={loading}
+                >
+                    Excluir Cliente
+                </Button>
+            </div>
         </div>
     )
 }

@@ -232,6 +232,7 @@ export const ClientList: React.FC = () => {
                     <ClientDetails
                         client={selectedClient}
                         onClose={() => setIsViewingDetails(false)}
+                        onDeleteSuccess={fetchClients}
                     />
                 )}
             </BottomSheet>

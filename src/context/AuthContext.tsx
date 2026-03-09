@@ -17,7 +17,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [user, setUser] = useState<User | null>(null)
     const [loading, setLoading] = useState(true)
 
+    const isBypassEnabled = import.meta.env.VITE_BYPASS_AUTH === 'true'
+
     useEffect(() => {
+        if (isBypassEnabled) {
+            console.log('AuthContext: Bypass enabled, setting mock user')
+            const mockUser: User = {
+                id: 'mock-user-id',
+                aud: 'authenticated',
+                role: 'authenticated',
+                email: 'luciana@example.com',
+                app_metadata: {},
+                user_metadata: { full_name: 'Luciana (Modo Desenvolvimento)' },
+                created_at: new Date().toISOString(),
+            }
+            const mockSession: Session = {
+                access_token: 'mock-token',
+                token_type: 'bearer',
+                expires_in: 3600,
+                refresh_token: 'mock-refresh',
+                user: mockUser,
+            }
+            setSession(mockSession)
+            setUser(mockUser)
+            setLoading(false)
+            return
+        }
+
         console.log('AuthContext: Initializing...')
         console.log('AuthContext: Current URL:', window.location.href)
 
@@ -88,9 +114,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         initAuth()
 
         return () => subscription.unsubscribe()
-    }, [])
+    }, [isBypassEnabled])
 
     const signInWithGoogle = async () => {
+        if (isBypassEnabled) {
+            console.log('AuthContext: Sign in bypassed')
+            return
+        }
         const { error } = await supabase.auth.signInWithOAuth({
             provider: 'google',
             options: {
@@ -106,6 +136,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     const signOut = async () => {
+        if (isBypassEnabled) {
+            console.log('AuthContext: Sign out bypassed')
+            setSession(null)
+            setUser(null)
+            return
+        }
         const { error } = await supabase.auth.signOut()
         if (error) throw error
     }
