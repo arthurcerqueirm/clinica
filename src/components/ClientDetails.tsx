@@ -99,8 +99,8 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({ client, onClose, o
     const confirmedPastApts = appointments.filter(apt => isPast(parseISO(apt.start_time)) && apt.status === 'confirmed')
     const upcomingApts = appointments.filter(apt => isFuture(parseISO(apt.start_time)) && apt.status === 'confirmed')
 
-    // Identify unpaid past appointments and packages
-    const unpaidApts = confirmedPastApts.filter(apt => !paidAptIds.has(apt.id))
+    // Identify unpaid past appointments (ignoring those that belong to a package) and packages
+    const unpaidApts = confirmedPastApts.filter(apt => !apt.package_id && !paidAptIds.has(apt.id))
     const unpaidPkgs = packages.filter(pkg => !paidPkgIds.has(pkg.id))
 
     const unpaidItems = [

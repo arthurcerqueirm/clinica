@@ -54,9 +54,9 @@ export const FinancialDashboard: React.FC = () => {
 
             if (appointmentsError) throw appointmentsError
 
-            // Filter out appointments that already have a paid payment record
+            // Filter out appointments that already have a paid payment record or belong to a package
             const paidAppointmentIds = new Set((paymentsData || []).map(p => p.appointment_id))
-            const pendingApts = (appointmentsData || []).filter(apt => !paidAppointmentIds.has(apt.id)).map(a => ({ ...a, is_package: false }))
+            const pendingApts = (appointmentsData || []).filter(apt => !apt.package_id && !paidAppointmentIds.has(apt.id)).map(a => ({ ...a, is_package: false }))
 
             // 3. Fetch Pending Packages (Active packages but no paid record)
             const { data: packagesData, error: packagesError } = await supabase
