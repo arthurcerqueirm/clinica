@@ -40,6 +40,7 @@ export const ClientList: React.FC = () => {
                     client_id,
                     status,
                     start_time,
+                    package_id,
                     massage:massage_id (price)
                 `)
                 .eq('status', 'confirmed')
@@ -47,23 +48,37 @@ export const ClientList: React.FC = () => {
 
             if (appointmentsError) throw appointmentsError
 
+            // 2.5 Fetch all active packages
+            const { data: packagesData, error: packagesError } = await supabase
+                .from('packages')
+                .select('id, client_id, total_amount')
+
+            if (packagesError) throw packagesError
+
             // 3. Fetch all payments
             const { data: paymentsData, error: paymentsError } = await supabase
                 .from('payments')
-                .select('appointment_id, status')
+                .select('appointment_id, package_id, status')
                 .eq('status', 'paid')
 
             if (paymentsError) throw paymentsError
 
-            const paidAptIds = new Set(paymentsData.map(p => p.appointment_id))
+            const paidAptIds = new Set(paymentsData.filter(p => p.appointment_id).map(p => p.appointment_id))
+            const paidPkgIds = new Set(paymentsData.filter(p => p.package_id).map(p => p.package_id))
 
             const clientDebts: Record<string, number> = {}
             appointmentsData.forEach(apt => {
-                if (!paidAptIds.has(apt.id)) {
+                if (!apt.package_id && !paidAptIds.has(apt.id)) {
                     const price = Array.isArray(apt.massage)
                         ? Number(apt.massage[0]?.price || 0)
                         : Number((apt.massage as any)?.price || 0)
                     clientDebts[apt.client_id] = (clientDebts[apt.client_id] || 0) + price
+                }
+            })
+
+            packagesData.forEach(pkg => {
+                if (!paidPkgIds.has(pkg.id)) {
+                    clientDebts[pkg.client_id] = (clientDebts[pkg.client_id] || 0) + Number(pkg.total_amount)
                 }
             })
 
