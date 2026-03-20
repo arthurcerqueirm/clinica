@@ -8,7 +8,8 @@ interface MarkAsPaidModalProps {
     isOpen: boolean
     onClose: () => void
     onSuccess: () => void
-    appointmentId: string
+    appointmentId?: string
+    packageId?: string
     amount: number
     clientName: string
 }
@@ -26,6 +27,7 @@ export const MarkAsPaidModal: React.FC<MarkAsPaidModalProps> = ({
     onClose,
     onSuccess,
     appointmentId,
+    packageId,
     amount,
     clientName
 }) => {
@@ -40,7 +42,8 @@ export const MarkAsPaidModal: React.FC<MarkAsPaidModalProps> = ({
             const { error } = await supabase
                 .from('payments')
                 .insert({
-                    appointment_id: appointmentId,
+                    appointment_id: appointmentId || null,
+                    package_id: packageId || null,
                     amount: amount,
                     method: selectedMethod,
                     status: 'paid',
@@ -75,8 +78,8 @@ export const MarkAsPaidModal: React.FC<MarkAsPaidModalProps> = ({
 
                 <div className="mb-8">
                     <h3 className="text-2xl font-display font-bold text-dark mb-2">Registrar Pagamento</h3>
-                    <p className="text-dark/40 font-medium">
-                        Confirmar recebimento de <span className="text-sage-dark font-bold">R$ {amount}</span> para <span className="text-dark font-bold">{clientName}</span>
+                    <p className="text-dark/40 font-medium leading-relaxed">
+                        Confirmar recebimento de <span className="text-sage-dark font-bold">R$ {amount}</span> referente a {packageId ? 'pacote' : 'sessão'} para <span className="text-dark font-bold">{clientName}</span>
                     </p>
                 </div>
 

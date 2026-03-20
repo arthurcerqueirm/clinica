@@ -17,7 +17,7 @@ export const CreatePackageModal: React.FC<CreatePackageModalProps> = ({ isOpen, 
     const [massages, setMassages] = useState<Massage[]>([])
     const [packageLimit, setPackageLimit] = useState<number>(4)
     const [selectedQuantities, setSelectedQuantities] = useState<Record<string, number>>({})
-    const [paymentMethod, setPaymentMethod] = useState<'pix' | 'card' | 'cash'>('pix')
+    const [paymentMethod, setPaymentMethod] = useState<'pix' | 'card' | 'cash' | 'unpaid'>('pix')
     const [error, setError] = useState<string | null>(null)
 
     useEffect(() => {
@@ -106,17 +106,19 @@ export const CreatePackageModal: React.FC<CreatePackageModalProps> = ({ isOpen, 
             if (junctionError) throw junctionError
 
             // 3. Create the payment
-            const { error: payError } = await supabase
-                .from('payments')
-                .insert({
-                    package_id: pkg.id,
-                    amount: totalAmount,
-                    method: paymentMethod,
-                    status: 'paid',
-                    payment_date: new Date().toISOString()
-                })
+            if (paymentMethod !== 'unpaid') {
+                const { error: payError } = await supabase
+                    .from('payments')
+                    .insert({
+                        package_id: pkg.id,
+                        amount: totalAmount,
+                        method: paymentMethod,
+                        status: 'paid',
+                        payment_date: new Date().toISOString()
+                    })
 
-            if (payError) throw payError
+                if (payError) throw payError
+            }
 
             onSuccess()
             onClose()
@@ -180,6 +182,7 @@ export const CreatePackageModal: React.FC<CreatePackageModalProps> = ({ isOpen, 
                                 <option value="pix">PIX</option>
                                 <option value="card">Cartão</option>
                                 <option value="cash">Dinheiro</option>
+                                <option value="unpaid">Ainda não pago</option>
                             </select>
                         </div>
                     </div>
@@ -259,7 +262,7 @@ export const CreatePackageModal: React.FC<CreatePackageModalProps> = ({ isOpen, 
                         loading={loading}
                         disabled={!isReady}
                     >
-                        Criar e Marcar como Pago
+                        {paymentMethod === 'unpaid' ? 'Criar Pacote' : 'Criar e Marcar como Pago'}
                     </Button>
                 </div>
             </div>

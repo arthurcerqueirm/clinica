@@ -20,6 +20,7 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({ client, onClose, o
     const [appointments, setAppointments] = useState<any[]>([])
     const [packages, setPackages] = useState<Package[]>([])
     const [paidAptIds, setPaidAptIds] = useState<Set<string>>(new Set())
+    const [paidPkgIds, setPaidPkgIds] = useState<Set<string>>(new Set())
     const [loading, setLoading] = useState(true)
     const [selectedAptForPayment, setSelectedAptForPayment] = useState<any | null>(null)
     const [isCreatePackageOpen, setIsCreatePackageOpen] = useState(false)
@@ -62,7 +63,7 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({ client, onClose, o
             if (pkgsError) throw pkgsError
             setPackages(pkgs || [])
 
-            // 3. Fetch payments for these appointments
+            // 3. Fetch payments for these appointments and packages
             if (apts && apts.length > 0) {
                 const { data: payments, error: paymentsError } = await supabase
                     .from('payments')
@@ -72,6 +73,21 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({ client, onClose, o
 
                 if (paymentsError) throw paymentsError
                 setPaidAptIds(new Set(payments?.map(p => p.appointment_id) || []))
+            } else {
+                setPaidAptIds(new Set())
+            }
+
+            if (pkgs && pkgs.length > 0) {
+                const { data: payments, error: paymentsError } = await supabase
+                    .from('payments')
+                    .select('package_id')
+                    .in('package_id', pkgs.map(p => p.id))
+                    .eq('status', 'paid')
+
+                if (paymentsError) throw paymentsError
+                setPaidPkgIds(new Set(payments?.map(p => p.package_id) || []))
+            } else {
+                setPaidPkgIds(new Set())
             }
         } catch (err) {
             console.error('Erro ao buscar histórico:', err)
@@ -83,9 +99,16 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({ client, onClose, o
     const confirmedPastApts = appointments.filter(apt => isPast(parseISO(apt.start_time)) && apt.status === 'confirmed')
     const upcomingApts = appointments.filter(apt => isFuture(parseISO(apt.start_time)) && apt.status === 'confirmed')
 
-    // Identify unpaid past appointments
+    // Identify unpaid past appointments and packages
     const unpaidApts = confirmedPastApts.filter(apt => !paidAptIds.has(apt.id))
-    const totalDebt = unpaidApts.reduce((sum, apt) => sum + (apt.massage?.price || 0), 0)
+    const unpaidPkgs = packages.filter(pkg => !paidPkgIds.has(pkg.id))
+
+    const unpaidItems = [
+        ...unpaidApts.map(apt => ({ ...apt, is_package: false })),
+        ...unpaidPkgs.map(pkg => ({ ...pkg, is_package: true }))
+    ].sort((a, b) => new Date(b.created_at || b.start_time).getTime() - new Date(a.created_at || a.start_time).getTime())
+
+    const totalDebt = unpaidItems.reduce((sum, item) => sum + (item.is_package ? item.total_amount : item.massage?.price || 0), 0)
     const totalPaid = confirmedPastApts.filter(apt => paidAptIds.has(apt.id)).reduce((sum, apt) => sum + (apt.massage?.price || 0), 0)
 
     const handleWhatsApp = () => {
@@ -132,15 +155,33 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({ client, onClose, o
                         <span className="text-xl font-display font-bold text-rose-dark">R$ {totalDebt}</span>
                     </div>
                     <div className="space-y-2">
-                        {unpaidApts.map(apt => (
-                            <div key={apt.id} className="flex items-center justify-between text-xs font-medium text-rose-dark/60">
-                                <span>{apt.massage?.name} ({format(parseISO(apt.start_time), "dd/MM")})</span>
-                                <span className="font-bold">R$ {apt.massage?.price}</span>
+                        {unpaidItems.map(item => (
+                            <div key={item.id} className="flex items-center justify-between text-xs font-medium text-rose-dark/60 bg-white/40 p-2 rounded-lg">
+                                <div>
+                                    <span className="block font-bold text-rose-dark">
+                                        {item.is_package ? `Pacote (${item.total_sessions} sessões)` : item.massage?.name}
+                                    </span>
+                                    <span className="text-[10px]">
+                                        {item.is_package
+                                            ? `Criado em ${format(parseISO(item.created_at), "dd/MM")}`
+                                            : format(parseISO(item.start_time), "dd/MM")
+                                        }
+                                    </span>
+                                </div>
+                                <div className="flex items-center space-x-3">
+                                    <span className="font-bold">R$ {item.is_package ? item.total_amount : item.massage?.price}</span>
+                                    <button
+                                        onClick={() => setSelectedAptForPayment(item)}
+                                        className="bg-rose text-white px-3 py-1.5 rounded-lg text-[10px] font-bold shadow-ios active:scale-95 transition-all"
+                                    >
+                                        Pagar
+                                    </button>
+                                </div>
                             </div>
                         ))}
                     </div>
                     <p className="text-[10px] font-bold text-rose-dark/40 uppercase tracking-wider pt-2 border-t border-rose/10">
-                        Total de {unpaidApts.length} sessões aguardando pagamento
+                        Total de {unpaidItems.length} pendência(s) aguardando pagamento
                     </p>
                 </div>
             )}
@@ -346,8 +387,9 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({ client, onClose, o
                     isOpen={!!selectedAptForPayment}
                     onClose={() => setSelectedAptForPayment(null)}
                     onSuccess={fetchHistory}
-                    appointmentId={selectedAptForPayment.id}
-                    amount={Number(selectedAptForPayment.massage?.price || 0)}
+                    appointmentId={selectedAptForPayment.is_package ? undefined : selectedAptForPayment.id}
+                    packageId={selectedAptForPayment.is_package ? selectedAptForPayment.id : undefined}
+                    amount={Number(selectedAptForPayment.is_package ? selectedAptForPayment.total_amount : selectedAptForPayment.massage?.price || 0)}
                     clientName={client.name}
                 />
             )}

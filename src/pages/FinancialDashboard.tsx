@@ -56,7 +56,31 @@ export const FinancialDashboard: React.FC = () => {
 
             // Filter out appointments that already have a paid payment record
             const paidAppointmentIds = new Set((paymentsData || []).map(p => p.appointment_id))
-            const pending = (appointmentsData || []).filter(apt => !paidAppointmentIds.has(apt.id))
+            const pendingApts = (appointmentsData || []).filter(apt => !paidAppointmentIds.has(apt.id)).map(a => ({ ...a, is_package: false }))
+
+            // 3. Fetch Pending Packages (Active packages but no paid record)
+            const { data: packagesData, error: packagesError } = await supabase
+                .from('packages')
+                .select(`
+                  *,
+                  client:client_id (name)
+                `)
+                .eq('status', 'active')
+                .order('created_at', { ascending: false })
+
+            if (packagesError) throw packagesError
+
+            const paidPackageIds = new Set((paymentsData || []).filter(p => p.package_id).map(p => p.package_id))
+            const pendingPkgs = (packagesData || []).filter(pkg => !paidPackageIds.has(pkg.id)).map(pkg => ({
+                ...pkg,
+                is_package: true
+            }))
+
+            const pending = [...pendingApts, ...pendingPkgs].sort((a, b) => {
+                const dateA = new Date(a.start_time || a.created_at).getTime()
+                const dateB = new Date(b.start_time || b.created_at).getTime()
+                return dateB - dateA
+            })
 
             setPendingAppointments(pending)
 
@@ -65,7 +89,7 @@ export const FinancialDashboard: React.FC = () => {
                 .reduce((acc, curr) => acc + Number(curr.amount), 0)
 
             const pendingTotal = pending
-                .reduce((acc, curr) => acc + Number(curr.massage?.price || 0), 0)
+                .reduce((acc, curr) => acc + Number(curr.is_package ? curr.total_amount : curr.massage?.price || 0), 0)
 
             setTotals({ received, pending: pendingTotal })
         } catch (err) {
@@ -178,7 +202,10 @@ export const FinancialDashboard: React.FC = () => {
                                 <div>
                                     <h4 className="font-bold text-dark">{apt.client?.name}</h4>
                                     <p className="text-[10px] text-dark/30 font-bold uppercase tracking-tight">
-                                        Realizado em {new Date(apt.start_time).toLocaleDateString('pt-BR')} • {apt.massage?.name}
+                                        {apt.is_package
+                                            ? `Pacote criado em ${new Date(apt.created_at).toLocaleDateString('pt-BR')} • ${apt.total_sessions} sessões`
+                                            : `Realizado em ${new Date(apt.start_time).toLocaleDateString('pt-BR')} • ${apt.massage?.name}`
+                                        }
                                     </p>
                                 </div>
                             </div>
@@ -208,8 +235,9 @@ export const FinancialDashboard: React.FC = () => {
                         setSelectedAppointment(null)
                     }}
                     onSuccess={fetchFinancialData}
-                    appointmentId={selectedAppointment.id}
-                    amount={Number(selectedAppointment.massage?.price || 0)}
+                    appointmentId={selectedAppointment.is_package ? undefined : selectedAppointment.id}
+                    packageId={selectedAppointment.is_package ? selectedAppointment.id : undefined}
+                    amount={Number(selectedAppointment.is_package ? selectedAppointment.total_amount : selectedAppointment.massage?.price || 0)}
                     clientName={selectedAppointment.client?.name}
                 />
             )}
