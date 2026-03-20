@@ -57,7 +57,6 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({ client, onClose, o
                     )
                 `)
                 .eq('client_id', client.id)
-                .eq('status', 'active')
                 .order('created_at', { ascending: false })
 
             if (pkgsError) throw pkgsError
@@ -101,7 +100,7 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({ client, onClose, o
 
     // Identify unpaid past appointments (ignoring those that belong to a package) and packages
     const unpaidApts = confirmedPastApts.filter(apt => !apt.package_id && !paidAptIds.has(apt.id))
-    const unpaidPkgs = packages.filter(pkg => !paidPkgIds.has(pkg.id))
+    const unpaidPkgs = packages.filter(pkg => !paidPkgIds.has(pkg.id) && pkg.status !== 'cancelled')
 
     const unpaidItems = [
         ...unpaidApts.map(apt => ({ ...apt, is_package: false })),
@@ -109,7 +108,13 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({ client, onClose, o
     ].sort((a, b) => new Date(b.created_at || b.start_time).getTime() - new Date(a.created_at || a.start_time).getTime())
 
     const totalDebt = unpaidItems.reduce((sum, item) => sum + (item.is_package ? item.total_amount : item.massage?.price || 0), 0)
-    const totalPaid = confirmedPastApts.filter(apt => paidAptIds.has(apt.id)).reduce((sum, apt) => sum + (apt.massage?.price || 0), 0)
+
+    // Calculate total paid (appointments + packages)
+    const totalPaidApts = confirmedPastApts.filter(apt => paidAptIds.has(apt.id)).reduce((sum, apt) => sum + (apt.massage?.price || 0), 0)
+    const totalPaidPkgs = packages.filter(pkg => paidPkgIds.has(pkg.id)).reduce((sum, pkg) => sum + Number(pkg.total_amount || 0), 0)
+    const totalPaid = totalPaidApts + totalPaidPkgs
+
+    const activePackages = packages.filter(pkg => pkg.status === 'active')
 
     const handleWhatsApp = () => {
         const phone = client.phone?.replace(/\D/g, '')
@@ -242,9 +247,9 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({ client, onClose, o
                     </button>
                 </div>
 
-                {packages.length > 0 ? (
+                {activePackages.length > 0 ? (
                     <div className="space-y-2">
-                        {packages.map(pkg => (
+                        {activePackages.map(pkg => (
                             <div key={pkg.id} className="ios-card bg-cream-light/50 border-sage/20 !p-4">
                                 <div className="flex justify-between items-start mb-3">
                                     <div>

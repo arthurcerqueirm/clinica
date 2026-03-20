@@ -23,8 +23,8 @@ import { BottomSheet } from '../components/BottomSheet'
 import { SchedulingFlow } from '../components/SchedulingFlow'
 import { supabase } from '../utils/supabase'
 
-// Business Hours: 08:00 to 20:00
-const HOURS = Array.from({ length: 13 }, (_, i) => 8 + i)
+// Business Hours: 07:00 to 22:00
+const HOURS = Array.from({ length: 16 }, (_, i) => 7 + i)
 const DAYS_TO_SHOW = [1, 2, 3, 4, 5, 6] // Monday (1) to Saturday (6)
 
 export const CalendarView: React.FC = () => {
