@@ -341,27 +341,29 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({ client, onClose, o
                                 {confirmedPastApts.map(apt => (
                                     <div key={apt.id} className={cn(
                                         "ios-card !p-3 flex items-center justify-between transition-all",
-                                        paidAptIds.has(apt.id) ? "opacity-60 bg-white" : "border-rose/30 bg-rose/5"
+                                        (paidAptIds.has(apt.id) || apt.package_id) ? "opacity-60 bg-white" : "border-rose/30 bg-rose/5"
                                     )}>
                                         <div className="flex items-center space-x-3">
                                             <div className={cn(
                                                 "w-10 h-10 rounded-xl flex items-center justify-center",
-                                                paidAptIds.has(apt.id) ? "bg-cream-dark/50 text-dark/30" : "bg-rose/10 text-rose"
+                                                (paidAptIds.has(apt.id) || apt.package_id) ? "bg-cream-dark/50 text-dark/30" : "bg-rose/10 text-rose"
                                             )}>
                                                 <Calendar size={18} />
                                             </div>
                                             <div>
                                                 <p className={cn(
                                                     "text-sm font-bold",
-                                                    paidAptIds.has(apt.id) ? "text-dark/60" : "text-dark"
+                                                    (paidAptIds.has(apt.id) || apt.package_id) ? "text-dark/60" : "text-dark"
                                                 )}>{apt.massage?.name}</p>
                                                 <p className="text-[10px] font-medium text-dark/30">
                                                     {format(parseISO(apt.start_time), "dd/MM/yyyy", { locale: ptBR })} • R$ {apt.massage?.price}
                                                 </p>
                                             </div>
                                         </div>
-                                        {paidAptIds.has(apt.id) ? (
-                                            <span className="text-[10px] font-bold text-sage">Pago</span>
+                                        {(paidAptIds.has(apt.id) || apt.package_id) ? (
+                                            <span className="text-[10px] font-bold text-sage">
+                                                {apt.package_id ? 'Pacote' : 'Pago'}
+                                            </span>
                                         ) : (
                                             <button
                                                 onClick={() => setSelectedAptForPayment(apt)}
